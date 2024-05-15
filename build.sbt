@@ -96,9 +96,9 @@ settings(
                                         case "2.11.12" => "-optimise"
                                         case "2.12.8" => "-opt:_"
                                       }}).value,
-  resolvers += "uuverifiers" at "https://eldarica.org/maven/",
-  libraryDependencies += "uuverifiers" %% "eldarica" % "nightly-SNAPSHOT",
-  libraryDependencies += "uuverifiers" %% "horn-concurrency" % "nightly-SNAPSHOT",
+//  resolvers += "uuverifiers" at "https://eldarica.org/maven/",
+  libraryDependencies += "uuverifiers" %% "eldarica" % "10.0.0-SNAPSHOT",
+  libraryDependencies += "uuverifiers" %% "horn-concurrency" % "10.0.0-SNAPSHOT",
   libraryDependencies += "net.jcazevedo" %% "moultingyaml" % "0.4.2",
   libraryDependencies += "org.scalactic" %% "scalactic" % "3.2.12",
   libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.12" % "test",

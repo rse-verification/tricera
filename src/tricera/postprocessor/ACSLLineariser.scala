@@ -425,7 +425,7 @@ object ACSLLineariser {
         case IAtom(NonEqPredicate, _) =>
           allButLast(ctxt setPrecLevel 1, " != ", "", 2)
         case IAtom(GeqPredicate, _) =>
-          allButLast(ctxt setPrecLevel 1, " >= ", "", 2)
+          allButLast(ctxt setPrecLevel 1, " > ", "-1", 2) //rewrite >= X as > X-1. Same if integer and correct if using rats. 
         case IAtom(LtPredicate, _) =>
           allButLast(ctxt setPrecLevel 1, " < ", "", 2)
 
@@ -467,8 +467,16 @@ object ACSLLineariser {
             case Quantifier.ALL => "\\forall"
             case Quantifier.EX => "\\exists"
           })
-          print(" " + sort + " " + varName)
-
+          if(sort.toString() =="Rat"){//Acsl contract uses floats and not rat
+             print(" float " + varName)
+          }
+          else{
+            print(" " + sort + " " + varName)
+          }
+          
+         
+          
+         
           var newCtxt = ctxt pushVar varName
 
           var sub = subF

@@ -36,6 +36,7 @@ import sys.process._
 
 import ap.parser.IExpression.{ConstantTerm, Predicate}
 import ap.parser.{IAtom, IConstant, IFormula, VariableSubstVisitor}
+import ap.basetypes.IdealInt
 
 import hornconcurrency.ParametricEncoder
 
@@ -605,9 +606,33 @@ class Main (args: Array[String]) {
                       !maybeEnc.get.prePredsToReplace.contains(ctx.prePred.pred) &&
                       !maybeEnc.get.postPredsToReplace.contains(ctx.postPred.pred)) {
                 // todo: implement replaceArgs as a solution processor
+                  
+                  //Handle Rat_denom expressions 
+                  def ratPostProcess(f:IFormula):IFormula={
+                  //println("----------PostProcessor Start----------------")
+                  val visitor =
+                  new Postprocessor
+                  val res =
+                    visitor.visit(f, ()).asInstanceOf[IFormula]
+                  //println("----------PostProcessor End----------------")
+                  res
+                }
+                //Handle eps expressions
+                def epsPostProcess(f:IFormula):IFormula={
+                  //println("----------EpsPostProcessor Start----------------")
+                  val visitor =
+                  new EpsPostProcessor
+                  val res =
+                    visitor.visit(f, ()).asInstanceOf[IFormula]
+                  //println("----------EpsPostProcessor End----------------")
+                  res
+                }
+
+
+
                 def funContractToACSLString(fPred    : Predicate,
                                             argNames : Seq[String]) : String = {
-                  val fPredToSol  = fPred -> processedSolution(fPred)
+                  val fPredToSol  = fPred -> ratPostProcess(epsPostProcess(processedSolution(fPred)))
                   val fPredClause = clausifySolution(fPredToSol, argNames)
                   ACSLLineariser asString fPredClause.constraint
                 }
@@ -787,3 +812,184 @@ class Main (args: Array[String]) {
   }
 
 }
+
+import ap.parser._
+import IExpression._
+import Sort._
+
+// Counts the number of epsilon sub expressions in a expression. Final value is stored in nrOfEpsFound
+private class EpsCounter extends CollectingVisitor[Unit, IExpression]{
+   var nrOfEpsFound = 0
+    override def preVisit(t : IExpression,
+                          arg : Unit) : PreVisitResult = t match {
+                            case ISortedEpsilon(_,_) =>{
+                                nrOfEpsFound += 1 //Epsilon Found
+                                KeepArg
+                            }
+                            case _ =>  KeepArg
+
+                          }
+     def postVisit(t: IExpression, arg: Unit,
+                subres: Seq[IExpression]): IExpression={
+                  t
+                }
+}
+
+//Handels the removal of epsilon expressions
+private class EpsPostProcessor extends CollectingVisitor[Unit, IExpression] {
+  var retried = false
+  var epsList:List[(Int,Sort,IExpression)] = List()
+  var varIndex = 0
+
+  
+  override def preVisit(t : IExpression,
+                          arg : Unit) : PreVisitResult={
+    //println("Pre start with t:"+t)
+    t match{
+          case IIntFormula(_,_) =>{ // Equalities, inequalities, etc. are the top nodes where we want to add the exists later
+            if(retried){
+              //If we already visited this node, move on
+              retried = false
+              KeepArg    
+            }
+            else{
+              //Count number of epsilon sub expressions.
+              var counter = new EpsCounter
+              var _ = counter.visit(t,())
+              var nrOfEps = counter.nrOfEpsFound
+              //println("NR OF EPS:"+nrOfEps)
+              //Shift variables to account for the exits which will be added
+              var res = shiftVars(t,0,nrOfEps)
+              //println("After shift:"+res)
+              retried = true 
+              TryAgain(res,arg) 
+            }
+ 
+        
+         }
+         case IEquation(_,_) =>{ // Equalities, inequalities, etc. are the top nodes where we want to add the exists later
+             if(retried){
+              //If we already visited this node, move on
+              retried = false
+              KeepArg    
+            }
+            else{
+              //Count number of epsilon sub expressions.
+              var counter = new EpsCounter
+              var _ = counter.visit(t,())
+              var nrOfEps = counter.nrOfEpsFound
+              //println("NR OF EPS:"+nrOfEps)
+              //Shift variables to account for the exits which will be added
+              var res = shiftVars(t,0,nrOfEps)
+              //println("After shift:"+res)
+              retried = true
+              TryAgain(res,arg)
+            }
+         }
+         //Replace Epsilon with new variables
+         case ISortedEpsilon(s,f) =>{
+                        //println("Eps removed and added to list")
+                        epsList = epsList :+ (varIndex, s, f) //Save eps to be re-added later as &&
+                        var res = ISortedVariable(varIndex,s) 
+                        varIndex += 1 //Make sure next eps get different index
+                        ShortCutResult(res)
+                      }
+         case _ => KeepArg
+    }
+  }
+   def postVisit(t: IExpression, arg: Unit,
+                subres: Seq[IExpression]): IExpression = {
+                //println("Post visit started with t:"+t)
+                t  match {
+                    //Reconstruct Formula with exists instead of epsilon
+                    case IIntFormula(_,_) =>{
+                      //println("IIntforumla found:"+(t update subres))
+                      var res = (t update subres)
+                      //println("epsList:"+epsList)
+                      for ((i,s,f) <- epsList) { //Add back epsilon sub expression with and 
+                        res = IBinFormula(IBinJunctor.And,res.asInstanceOf[IFormula],shiftVars(f.asInstanceOf[IFormula],0,i))
+                      } 
+                      for ((i,s,f) <- epsList) { //Add exists to quantify new epsilon variables
+                        res = ISortedQuantified(Quantifier.EX,s,res.asInstanceOf[IFormula])
+                      } 
+                      //Reset variables for next expression
+                      varIndex = 0
+                      epsList = List()
+                      
+                      res
+                    }
+                    //Reconstruct Formula with exists instead of epsilon
+                    case IEquation(_,_) =>{
+                     //println("IIntforumla found:"+(t update subres))
+                      var res = (t update subres)
+                      //println("epsList:"+epsList)
+                      for ((i,s,f) <- epsList) { //Add back epsilon sub expression with and 
+                        res = IBinFormula(IBinJunctor.And,res.asInstanceOf[IFormula],shiftVars(f.asInstanceOf[IFormula],0,i))
+                      } 
+                      for ((i,s,f) <- epsList) { //Add exists to quantify new epsilon variables
+                        res = ISortedQuantified(Quantifier.EX,s,res.asInstanceOf[IFormula])
+                      } 
+                      //Reset variables for next expression
+                      varIndex = 0
+                      epsList = List()
+                      
+                      res
+                    }
+                    
+                    case _ => (t update subres) match {
+                      case res => {
+                            res
+                      }
+                    }
+                 
+                  }
+                }               
+}
+
+//Handles rat_denom postprocessing
+private class Postprocessor extends CollectingVisitor[Unit, IExpression] {
+
+
+  def postVisit(t: IExpression, arg: Unit,
+                subres: Seq[IExpression]): IExpression = {
+    //println("Current expression:"+t+", with class :"+ t.getClass)            
+    t match{
+    case IFunApp(fun,args) => fun.name match{
+        case "Rat_denom" =>{
+                        //println("Matched:Rat_denom") 
+                        IIntLit(IdealInt(1)) //Remove rat_denom
+        }
+        case "getFloat" => {
+          (t update subres) match {
+            case IFunApp(_,args2) =>{
+              //println("Matced getfloat:"+ args2.head)
+              args2.head //remove getFloat call
+            }
+          }
+        }
+        case "floatData" =>   {
+          (t update subres) match {
+          case IFunApp(_,args2) =>{
+              //println("Matced floatData:"+ args2.head)
+              args2.head //remove floatData call
+            }
+            }
+          }
+        case _ => {
+          //println("Matched:IFunApp with class,"+fun.getClass) 
+          (t update subres) match {
+            case res =>
+              res
+          }
+        }
+      }
+    case _ => {
+      (t update subres) match {          
+          case res =>
+            res
+        }
+    }
+  }
+}
+}
+
