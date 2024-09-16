@@ -274,63 +274,30 @@ import ap.types.{MonoSortedIFunction}
       }
       else {
         //
-        val mantissaBits: Int = java.lang.Float.floatToIntBits(f) << 9 >>> 9
-        val mantissa: String = String.format("%23s", Integer.toBinaryString(mantissaBits)).replace(' ', '0')
+        var fp_var = fp
+        if(fp_var(fp_var.length()-1)=='f'){
+          fp_var = fp_var.slice(0,fp_var.length()-1)
+        }
+        
+        val fp_arr = fp_var.split("\\.")
+        if(fp_arr.length==1){
+          return (fp_var,"1")
+        }
+        val nat = fp_arr(0)
+        val dec = fp_arr(1)
 
-        val exponentBits: Int = (java.lang.Float.floatToIntBits(f) << 1 >>> 24)
-        val exponent: String = String.format("%8s", Integer.toBinaryString(exponentBits)).replace(' ', '0')
+        var pattern = "^0+$".r
+        var res = dec match{
+          case pattern(_*) => true
+          case _ => false
+        }
+        if (res){
+          return (nat,"1")
+        }
+        return(nat+dec,"1"+"0"*dec.length)
+        
+      
 
-        val signBit = (java.lang.Float.floatToIntBits(f) >>> 31).toBinaryString
-
-        var bitCount: Int = 23
-
-        var denominator: BigInt = 1
-        var numerator: BigInt = 0
-        var loop = new Breaks
-        loop.breakable {
-          for (bit <- mantissa.reverse) {
-            if (bit == '1') {
-              denominator = BigInt(2).pow(bitCount)
-              loop.break()
-            }
-            bitCount = bitCount - 1
-          }
-        }
-
-        // reset bitCount
-        bitCount = 1
-        numerator = denominator
-        for (bit <- mantissa) {
-          if (bit == '1') {
-            numerator = numerator + denominator / BigInt(2).pow(bitCount)
-          }
-          bitCount = bitCount + 1
-        }
-
-        bitCount = 0
-        var exponentInt: Int = -pow(2, exponent.length() - 1).toInt + 1
-        for (bit <- exponent.reverse) {
-          if (bit == '1') {
-            exponentInt = exponentInt + pow(2, bitCount).toInt
-          }
-          bitCount = bitCount + 1
-        }
-        denominator
-        if (exponentInt > 0) {
-          numerator = numerator * BigInt(2).pow(exponentInt)
-        }
-        if (exponentInt < 0) {
-          denominator = denominator * BigInt(2).pow(abs(exponentInt))
-        }
-        // Case for when the float is 0
-        if (exponentInt == -pow(2, exponent.length() - 1).toInt + 1 && numerator == 1){
-          numerator = 0
-          denominator = 1
-        }
-        if (signBit == "1") {
-          numerator = -numerator
-        }
-        (numerator.toString, denominator.toString)
       }
     }
   }
